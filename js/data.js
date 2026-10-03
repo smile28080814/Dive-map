@@ -2830,7 +2830,7 @@ const COUNTRIES = [
   "viz": "10~30m",
   "suit": {
    "beginner": 3,
-   "free": 2,
+   "free": 4,
    "scuba": 4
   },
   "points": [
