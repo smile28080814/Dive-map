@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>세계 프리다이빙 & 해양생물 도감</title>
+<meta name="description" content="33개국 248개 프리다이빙·스쿠버 포인트와 월별 해양생물 캘린더. 고래상어·만타·귀상어·혹등고래를 언제 어디서 볼 수 있는지 찾아보세요.">
+<meta name="theme-color" content="#081418">
+<meta property="og:type" content="website">
+<meta property="og:title" content="세계 프리다이빙 & 해양생물 도감">
+<meta property="og:description" content="33개국 248개 다이빙 포인트와 월별 해양생물 캘린더">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- no external map library needed: points are drawn as a self-contained SVG coordinate plot -->
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+
+</head>
+<body>
+
+<div class="depth-rail"><span>0m — 30m+ · SURFACE TO ABYSS</span><div class="ticks"></div></div>
+
+<header class="top">
+  <div class="brand">
+    <span class="mark">FIELD GUIDE — WORLD</span>
+    <h1 class="display">세계 프리다이빙 & 해양생물 도감</h1>
+  </div>
+  <nav class="tabs">
+    <button data-tab="browse" class="active">둘러보기</button>
+    <button data-tab="search">조건 검색</button>
+  </nav>
+</header>
+
+<div class="wrap">
+  <div id="view-root"></div>
+  <footer class="site">
+    실제 여행 전 현지 다이빙 센터·정부 관광청·해양보호구역 공식 정보를 반드시 확인하세요 · 정적 데이터 기반 도감 (33개국 · 248개 포인트) · 정보는 계속 보강됩니다
+  </footer>
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/map-land.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
