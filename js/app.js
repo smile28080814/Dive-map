@@ -602,8 +602,22 @@ function renderSearch(){
 
 function bestPointFor(c, creatureName){
   if(creatureName){
-    const kws = creatureKeywords(creatureName).concat(creatureName.replace(/\(.*?\)/g,'').split('·').map(x=>x.trim()).filter(x=>x.length>1));
-    const hit = c.points.find(p => p.preview && kws.some(k=>p.preview.includes(k)));
+    // 1) 그룹 키워드 + 이름 조각(괄호 안 지명 포함)으로 미리보기·포인트명·지역명에서 찾기
+    const inParen = (creatureName.match(/\((.*?)\)/) || [,''])[1];
+    const base = creatureName.replace(/\(.*?\)/g,'');
+    const kws = creatureKeywords(creatureName)
+      .concat(base.split(/[·&,]/).map(x=>x.trim()).filter(x=>x.length>1))
+      .concat(inParen.split(/[ ·]/).map(x=>x.trim()).filter(x=>x.length>1));
+    // 포인트마다 일치 점수: 미리보기·포인트명 일치 2점, 지역명 일치 1점 → 가장 높은 포인트
+    const scoreOf = (p, list) => list.reduce((n,k)=> n + (((p.preview||'')+' '+p.name).includes(k) ? 2 : p.region.includes(k) ? 1 : 0), 0);
+    const pick = list => { let best=null, bs=0; c.points.forEach(p=>{ const v=scoreOf(p,list); if(v>bs){ bs=v; best=p; } }); return best; };
+    let hit = pick(kws);
+    // 2) 미리보기·이름에 직접 일치가 없으면 끝 두 글자(예: 매부리거북→거북, 돌산호→산호)로 한 번 더
+    if(!hit || scoreOf(hit,kws) < 2){
+      const tails = kws.map(k=>k.replace(/\s/g,'')).filter(k=>k.length>=3).map(k=>k.slice(-2));
+      const t = pick(tails);
+      if(t && scoreOf(t,tails) >= 2) hit = t;
+    }
     if(hit) return hit;
   }
   return c.points[0];
@@ -615,45 +629,57 @@ function runSearch(){
   const mode = document.getElementById('f-mode').value;
   const level = document.getElementById('f-level').value;
 
+  // ---- scoring ----------------------------------------------------------
+  // 1) 다이빙 방식 적합도(국가 별점)        : 별점 × 6 (최대 30). 프리/스쿠버에서 별 2개 이하면 -25
+  // 2) 나라별 다이빙 시즌(c.season)         : 시즌이면 +18, 비시즌이면 -10  ← 월에 따라 순위가 달라지는 핵심
+  // 3) 그 달의 생물                         : 시즌이 맞는 생물 상위 3종만 반영 (개수 많은 나라가 유리하지 않게)
+  //    - 연중 상주 생물(11개월 이상 관찰)은 0.5배 → 그 달에만 볼 수 있는 계절 하이라이트가 더 중요
+  //    - 생물마다 프리/스쿠버 관찰 적합도를 곱함
+  // 4) 특정 생물을 고르면 그 생물이 있는 나라만, 시즌이 아니면 시즌인 나라보다 항상 아래
+  const modeVal = o => mode==='free' ? o.free : mode==='scuba' ? o.scuba : (o.free + o.scuba)/2;
+  const seasonFit = cr => !month ? 0.6 : (cr.peak && cr.peak.includes(month)) ? 1 : (cr.months && cr.months.includes(month)) ? 0.6 : 0;
+  const resident = cr => cr.months && cr.months.length >= 11;
+  const creatureVal = cr => seasonFit(cr) * modeVal(cr) / 5 * (resident(cr) ? 0.5 : 1);
+
   let scored = COUNTRIES.map(c=>{
     let score = 0;
     let matchedCreature = null;
     let matchedMonthOK = true;
+    const suit = modeVal(c.suit);
+    const inSeason = !month || !c.season || c.season.includes(month);
+
+    score += suit * 6;
+    if(mode !== 'both' && suit <= 2) score -= 25;
+    if(month && c.season) score += inSeason ? (creature ? 8 : 18) : (creature ? -5 : -10);
 
     if(creature){
-      // among this country's matching variants, prefer the one whose season fits the chosen month
       const cands = c.creatures.filter(cr=>creatureMatches(cr, creature));
-      const fit = cr => !month ? 0 : (cr.peak && cr.peak.includes(month)) ? 2 : (cr.months && cr.months.includes(month)) ? 1 : 0;
-      matchedCreature = cands.sort((x,y)=>fit(y)-fit(x))[0];
-      if(!matchedCreature){ score -= 100; }
+      matchedCreature = cands.sort((x,y)=>seasonFit(y)-seasonFit(x) || modeVal(y)-modeVal(x))[0];
+      if(!matchedCreature){ score -= 1000; }
       else{
-        score += 10;
+        const f = seasonFit(matchedCreature);
+        score += 30;
         if(month){
-          if(matchedCreature.peak && matchedCreature.peak.includes(month)){ score += 8; matchedMonthOK = true; }
-          else if(matchedCreature.months && matchedCreature.months.includes(month)){ score += 4; matchedMonthOK = true; }
-          else { score -= 6; matchedMonthOK = false; }
+          if(f === 1){ score += 20; } else if(f > 0){ score += 10; } else { score -= 60; matchedMonthOK = false; }
         }
+        score += modeVal(matchedCreature) * 3;
       }
-    } else if(month){
-      // no specific creature: score by how many creatures peak this month
-      const peakCount = c.creatures.filter(cr=>cr.peak && cr.peak.includes(month)).length;
-      const okCount = c.creatures.filter(cr=>cr.months && cr.months.includes(month)).length;
-      score += peakCount*5 + okCount*2;
+    } else {
+      const ranked = c.creatures.map(cr => ({cr, v: creatureVal(cr)})).sort((x,y)=>y.v-x.v);
+      score += ranked.slice(0,3).reduce((n,x)=>n+x.v, 0) * 10;
+      // 결과 표에 보여줄 대표 생물 = 이 달·이 방식에 가장 잘 맞는 생물 (상주 생물보다 계절 하이라이트 우선)
+      if(ranked.length && ranked[0].v > 0){ matchedCreature = ranked[0].cr; matchedMonthOK = true; }
     }
-
-    if(mode==='free') score += c.suit.free;
-    else if(mode==='scuba') score += c.suit.scuba;
-    else score += (c.suit.free + c.suit.scuba)/2;
 
     if(level){
       const idx = LEVELS.indexOf(level);
-      if(idx<=1) score += c.suit.beginner; // 입문/초급 -> 초보자 적합도 가중
+      if(idx<=1) score += c.suit.beginner * 3; // 입문/초급 -> 초보자 적합도 가중
     }
 
-    return {c, score, matchedCreature, matchedMonthOK};
+    return {c, score, matchedCreature, matchedMonthOK, inSeason};
   });
 
-  scored = scored.filter(s=>s.score > -50);
+  scored = scored.filter(s=>s.score > -500);
   scored.sort((a,b)=>b.score-a.score);
   const top5 = scored.slice(0,8);
 
@@ -674,8 +700,8 @@ function runSearch(){
     return `
     <tr class="result-row" onclick="openCountry('${c.id}')">
       <td class="rank">${i+1}</td>
-      <td><strong>${c.flag} ${c.name}</strong><br/><span style="color:var(--muted); font-size:12px;">${c.regions}</span></td>
-      <td>${bestPointFor(c, creature).name}</td>
+      <td><strong>${c.flag} ${c.name}</strong>${month && !s.inSeason ? ' <span class="confirm-tag">비시즌</span>' : ''}<br/><span style="color:var(--muted); font-size:12px;">${c.regions}</span></td>
+      <td>${bestPointFor(c, creature || rep).name}</td>
       <td>${rep}</td>
       <td>${avail}</td>
       <td>${STARS(c.suit.free)}</td>
@@ -699,7 +725,7 @@ function runSearch(){
     ${best ? `
     <div class="pick-best">
       <div class="eyebrow">가장 추천하는 선택</div>
-      <h3 class="display" style="margin:0 0 10px; font-size:22px; cursor:pointer;" onclick="openCountry('${best.c.id}')">${best.c.flag} ${best.c.name} — ${bestPointFor(best.c, creature).name}</h3>
+      <h3 class="display" style="margin:0 0 10px; font-size:22px; cursor:pointer;" onclick="openCountry('${best.c.id}')">${best.c.flag} ${best.c.name} — ${bestPointFor(best.c, creature || bestReasonCreature).name}</h3>
       <p style="color:#dcebe9; font-size:14px; line-height:1.8; margin:0 0 12px;">
         ${creature? `'${bestReasonCreature}'를 목표로 한다면 ` : ''}${best.c.name}이(가) 현재 조건에 가장 잘 맞습니다. ${month? `${month}월 기준 ` : ''}${best.c.bestMonths}이(가) 추천 시기이며, 프리다이빙 적합도 ${best.c.suit.free}점, 스쿠버다이빙 적합도 ${best.c.suit.scuba}점, 초보자 적합도 ${best.c.suit.beginner}점입니다. 자세한 포인트별 정보와 주의사항은 국가 상세 도감에서 확인하세요.
       </p>
